@@ -1,0 +1,105 @@
+config {
+  type: "incremental",
+  schema: "analytics_531718773",
+  name: "UnnestedData",
+  partitionBy: "event_date",
+  clusterBy: ["user_pseudo_id", "event_date"],
+
+  preOps: [`
+    declare start_date date default current_date('Australia/Sydney')-3;
+    declare end_date date default current_date('Australia/Sydney')-1;
+
+    delete from \`${self()}\`
+    where event_date between start_date and end_date;
+  `],
+
+  tags: ["analytics", "ga4"],
+  description: "Unnested GA4 events with traffic source and experience step mappings"
+}
+
+declare start_date date default current_date('Australia/Sydney')-3;
+declare end_date date default current_date('Australia/Sydney')-1;
+declare start_date_text string default format_date('%Y%m%d', start_date);
+declare end_date_text string default format_date('%Y%m%d', end_date);
+
+with raw_data as (
+  select
+    user_pseudo_id,
+    event_name,
+    date(timestamp_micros(event_timestamp),'Australia/Sydney') as event_date,
+    datetime(timestamp_micros(event_timestamp), 'Australia/Sydney') as event_ts,
+    (select param.value.string_value from unnest(event_params) param where param.key='environment') as environment,
+    (select param.value.string_value from unnest(event_params) param where param.key='experience') as experience,
+    (select param.value.string_value from unnest(event_params) param where param.key='step') as step,
+    (select param.value.string_value from unnest(event_params) param where param.key='response') as response,
+    traffic_source.name as campaign,
+    traffic_source.medium as medium,
+    traffic_source.source as source,
+    collected_traffic_source.manual_term as keyword,
+    session_traffic_source_last_click.cross_channel_campaign.`source` as session_source,
+    session_traffic_source_last_click.cross_channel_campaign.`medium` as session_medium,
+    session_traffic_source_last_click.cross_channel_campaign.`campaign_name` as session_campaign,
+    (select param.value.string_value from unnest(event_params) param where param.key='source') as event_source,
+    (select param.value.string_value from unnest(event_params) param where param.key='medium') as event_medium,
+    (select param.value.string_value from unnest(event_params) param where param.key='campaign') as event_campaign,
+    (select param.value.string_value from unnest(event_params) param where param.key='term') as event_keyword,
+    event_dimensions.hostname as hostname,
+    (select param.value.string_value from unnest(event_params) param where param.key='page_location') as page_location,
+    (select param.value.string_value from unnest(event_params) param where param.key='page_referrer') as page_referrer,
+    case
+      when (select value.int_value from unnest(event_params) where event_name = 'page_view' and key = 'entrances') = 1
+      then (select value.string_value from unnest(event_params) where event_name = 'page_view' and key = 'page_location')
+    end as landing_page,
+    geo.continent as continent,
+    geo.country as country,
+    geo.region as region,
+    geo.city as city,
+    device.category as device_category
+  from `healthinsurance-au.analytics_531718773.events_*`
+  where _table_suffix between start_date_text and end_date_text
+),
+
+calculated_source_medium as (
+  select
+    *,
+    case
+      when max(if(page_location like '%gbraid%' or page_location like '%gclid%', 1, 0))
+           over (partition by user_pseudo_id, event_date) = 1
+      then 'Google'
+      else coalesce(session_source, session_source)
+    end as calculated_source_session,
+    case
+      when max(if(page_location like '%gbraid%' or page_location like '%gclid%', 1, 0))
+           over (partition by user_pseudo_id, event_date) = 1
+      then 'cpc'
+      else coalesce(session_medium, session_medium)
+    end as calculated_medium_session
+  from raw_data
+)
+
+select
+  *,
+  case
+    when step like '%vQ7j7wTcxZWHa-0FiF3q5A%' or step like '%coverage-type%' or step like '%7MFiJZJ5HKwMKm3MBSZhYw%' then 'Coverage Type'
+    when step like '%HL8R9V96auf5Aoe5egy0Wg%' then 'Residency'
+    when step like '%2HEv3UVYz0cDc1SLp2l9gQ%' or step like '%Y_lekEJoWt5qOeA2JIb4NA%' or step like '%state-selection%' then 'State Selection'
+    when step like '%upLFvOW5uc9ve7_vUOZ2EA%' or step like '%GHFGUkAV43HmpgxjjTCcnQ%' or step like '%your-age%' then 'Age'
+    when step like '%Big8TMpYASDYGMrEUVHvXg%' or step like '%zqYJGyyq8mfk8QAqGKtKXw%' or step like '%income-selection%' then 'Income Selection'
+    when step like '%OZvvU5tYkE7hgMvf9ywwcw%' or step like '%HuqM6eNXYjT98X_Buh1hyg%' or step like '%motivation%' then 'motivation'
+    when step like '%WTNOSKWDqURdwXpGQsSHvw%' or step like '%rwtoyWQXyq61HU1ANlDZhQ%' or step like '%prioritise-highly-rated%' then 'Prioritise highly rated'
+    when step like '%_S1PAr-1-LvTLFz5U9_MlA%' or step like '%PuikaV6qIIpOZ8DhCXXK0A%' or step like '%cover-type%' then 'Cover Type'
+    when step like '%VlZ1irMDNhvvG4uDTmmt2A%' or step like '%hospital-treatments%' or step like '%i5S17zApP8Pt5-ciP8yGHQ%' then 'Hospital Treatments'
+    when step like '%q7BkqOknL6428o2ZduirZg%' or step like '%NTAi-QYjb33fzjgiX_-NRw%' or step like '%existing-cover%' then 'Existing Cover'
+    when step like '%hcRQ2GgVkWuR7UELPiXGRA%' or step like '%LdDSM4EriV-gbbHxxDL3VA%' or step like '%current-fund%' then 'Current Fund'
+    when step like '%4GHLWgEhSXREQ63XbA1uzQ%' or step like '%XC2VJ1QWhSLDpgYmVmE4ZQ%' or step like '%monthly-premium%' then 'Monthly Premium'
+    when step like '%b4U6oOhZX2XxGtF2yjjPcw%' or step like '%lR_OgfcOXtfpClkfyXW6Ag%' or step like '%find-current-product%' then 'Find Current Product'
+    when (step like '%vlBdS3SkIZWirsMmIllAdg%' or step like '%WWgeK-r86GwTfjik2bYE0Q%' or step like '%lead-capture%') and event_name='step_enter' then 'Lead Capture'
+    when event_name = 'lead_capture_success' then 'Lead Submission Success'
+  end as step_name_mapped,
+  0 as intraday_record
+from calculated_source_medium
+where
+  page_location not like '%localhost%'
+  and page_location not like '%staging%'
+  and page_location not like '%gtm_debug%'
+  and page_location not like '%convincely.io%'

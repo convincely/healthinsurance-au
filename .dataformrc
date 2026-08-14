@@ -1,0 +1,6 @@
+{
+  "projectId": "healthinsurance-au",
+  "defaultSchema": "analytics_531718773",
+  "assertionSchema": "assertions",
+  "warehouse": "bigquery"
+}
