@@ -103,3 +103,5 @@ where
   and page_location not like '%staging%'
   and page_location not like '%gtm_debug%'
   and page_location not like '%convincely.io%'
+
+# added by ram using Claude
